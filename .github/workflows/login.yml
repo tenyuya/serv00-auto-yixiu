@@ -3,10 +3,11 @@ name: Run Login Script
 on:
   workflow_dispatch:
   schedule:
-    - cron: "0 0 */1 * *"  # 每三天运行一次，可以根据需求调整时间
+    - cron: "0 0 * * *"  # 每天 UTC 0 点执行，即北京时间早上 8 点
   push:
     branches:
       - main
+
 jobs:
   login:
     runs-on: ubuntu-latest
@@ -18,7 +19,7 @@ jobs:
       - name: 设置 Python 环境
         uses: actions/setup-python@v2
         with:
-          python-version: '3.x'  # 设置你希望使用的 Python 版本，建议使用稳定版本
+          python-version: '3.8'  # 使用具体的 Python 版本
 
       - name: Create accounts.json from environment variable
         run: echo "$ACCOUNTS_JSON" > accounts.json
@@ -31,6 +32,9 @@ jobs:
           pip install pyppeteer aiofiles requests
           pip install --upgrade pyppeteer
 
+      - name: 打印调试信息
+        run: echo "正在运行登录脚本..."
+
       - name: 运行登录脚本
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
@@ -38,3 +42,4 @@ jobs:
           ACCOUNTS_JSON: ${{ secrets.ACCOUNTS_JSON }}
         run: |
           python login_script.py
+          echo "登录脚本运行完毕"
