@@ -23,16 +23,22 @@ browser = None
 # telegram消息
 message = ""
 
+def get_service_name(panel):
+    if 'ct8' in panel:
+        return 'CT8'
+    elif 'panel' in panel:
+        try:
+            panel_number = int(panel.split('panel')[1].split('.')[0])
+            return f'S{panel_number}'
+        except ValueError:
+            return 'Unknown'
+    return 'Unknown'
+
 async def login(username, password, panel):
     global browser
 
     page = None  # 确保 page 在任何情况下都被定义
-    if "ct8" in panel:
-        serviceName = "CT8"
-    else:
-        panel_number = panel.replace("panel", "").split(".")[0]  # 取出 panel 后的数字部分
-        serviceName = f"S{panel_number}"  # 例如 panel12 → S12
-
+    service_name = get_service_name(panel)
     try:
         if not browser:
             browser = await launch(headless=True, args=['--no-sandbox', '--disable-setuid-sandbox'])
@@ -61,11 +67,11 @@ async def login(username, password, panel):
             return logoutButton !== null;
         }''')
 
-        return is_logged_in, serviceName
+        return is_logged_in
 
     except Exception as e:
-        print(f'{serviceName} 账号 {username} 登录时出现错误: {e}')
-        return False, serviceName
+        print(f'{service_name}账号 {username} 登录时出现错误: {e}')
+        return False
 
     finally:
         if page:
@@ -94,29 +100,28 @@ async def main():
         password = account['password']
         panel = account['panel']
 
-        is_logged_in, serviceName = await login(username, password, panel)
+        service_name = get_service_name(panel)
+        is_logged_in = await login(username, password, panel)
 
         now_beijing = format_to_iso(datetime.utcnow() + timedelta(hours=8))
         if is_logged_in:
-            message += f"✅ *{serviceName}* 账号 *{username}* 于北京时间 {now_beijing} 登录面板成功！\n\n"
-            print(f"{serviceName} 账号 {username} 于北京时间 {now_beijing} 登录面板成功！")
+            message += f"✅*{service_name}*账号 *{username}* 于北京时间 {now_beijing} 登录面板成功！\n\n"
+            print(f"{service_name}账号 {username} 于北京时间 {now_beijing} 登录面板成功！")
         else:
-            message += f"❌ *{serviceName}* 账号 *{username}* 于北京时间 {now_beijing} 登录失败\n\n❗请检查 *{username}* 账号和密码是否正确。\n\n"
-            print(f"{serviceName} 账号 {username} 登录失败，请检查账号和密码是否正确。")
+            message += f"❌*{service_name}*账号 *{username}* 于北京时间 {now_beijing} 登录失败\n\n❗请检查 *{username}* 账号和密码是否正确。\n\n"
+            print(f"{service_name}账号 {username} 登录失败，请检查 {service_name} 账号和密码是否正确。")
 
         delay = random.randint(1000, 8000)
         await delay_time(delay)
         
-    message += f"🔚 脚本结束，如有异常点击下方按钮👇"
+    message += f"🔚脚本结束，如有异常点击下方按钮👇"
     await send_telegram_message(message)
-    print(f'所有 {serviceName} 账号登录完成！')
-    # 退出时关闭浏览器
+    print(f'所有账号登录完成！')
     await shutdown_browser()
 
 async def send_telegram_message(message):
-    # 使用 Markdown 格式
     formatted_message = f"""
-*🎯 serv00 & ct8 自动化保号脚本运行报告*
+*🎯 serv00&ct8自动化保号脚本运行报告*
 
 🕰 *北京时间*: {format_to_iso(datetime.utcnow() + timedelta(hours=8))}
 
@@ -131,21 +136,16 @@ async def send_telegram_message(message):
     payload = {
         'chat_id': TELEGRAM_CHAT_ID,
         'text': formatted_message,
-        'parse_mode': 'Markdown',  # 使用 Markdown 格式
+        'parse_mode': 'Markdown',
         'reply_markup': {
             'inline_keyboard': [
                 [
-                    {
-                        'text': '问题反馈❓',
-                        'url': '@yeubaibot'  # 点击按钮后跳转到问题反馈的链接
-                    }
+                    {'text': '问题反馈❓', 'url': 'https://t.me/yxjsjl'}
                 ]
             ]
         }
     }
-    headers = {
-        'Content-Type': 'application/json'
-    }
+    headers = {'Content-Type': 'application/json'}
 
     try:
         response = requests.post(url, json=payload, headers=headers)
