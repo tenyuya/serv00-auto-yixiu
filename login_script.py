@@ -23,6 +23,9 @@ browser = None
 # telegram消息
 message = ""
 
+# 用于存储各个服务成功与失败的账号
+login_results = {}
+
 def get_service_name(panel):
     if 'ct8' in panel:
         return 'CT8'
@@ -84,10 +87,7 @@ async def shutdown_browser():
         browser = None
 
 async def main():
-    global message
-
-    success_count = 0
-    fail_count = 0
+    global message, login_results
 
     try:
         async with aiofiles.open('accounts.json', mode='r', encoding='utf-8') as f:
@@ -106,19 +106,37 @@ async def main():
         is_logged_in = await login(username, password, panel)
 
         now_beijing = format_to_iso(datetime.utcnow() + timedelta(hours=8))
+
+        # 统计成功和失败的账号
+        if service_name not in login_results:
+            login_results[service_name] = {'success': [], 'fail': []}
+
         if is_logged_in:
-            success_count += 1
+            login_results[service_name]['success'].append(username)
             message += f"✅*{service_name}*账号 *{username}* 于北京时间 {now_beijing} 登录面板成功！\n\n"
             print(f"{service_name}账号 {username} 于北京时间 {now_beijing} 登录面板成功！")
         else:
-            fail_count += 1
+            login_results[service_name]['fail'].append(username)
             message += f"❌*{service_name}*账号 *{username}* 于北京时间 {now_beijing} 登录失败\n\n❗请检查 *{username}* 账号和密码是否正确。\n\n"
             print(f"{service_name}账号 {username} 登录失败，请检查 {service_name} 账号和密码是否正确。")
 
         delay = random.randint(1000, 8000)
         await delay_time(delay)
 
-    message += f"🔚脚本结束，共登录成功 *{success_count}* 个账号，失败 *{fail_count}* 个账号。"
+    # 生成每个服务的详细报告
+    message += "\n🔚脚本结束，具体情况如下：\n\n"
+    for service, results in login_results.items():
+        message += f"📦 *{service}*:\n"
+        if results['success']:
+            message += f"  ✅ 登录成功: {', '.join(results['success'])}\n"
+        else:
+            message += "  ✅ 登录成功: 无\n"
+
+        if results['fail']:
+            message += f"  ❌ 登录失败: {', '.join(results['fail'])}\n"
+        else:
+            message += "  ❌ 登录失败: 无\n"
+
     await send_telegram_message(message)
     print(f'所有账号登录完成！')
     await shutdown_browser()
