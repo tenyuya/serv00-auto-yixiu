@@ -137,12 +137,11 @@ async def main():
         else:
             message += "  ❌ 登录失败: 无\n"
 
-    # 只列出失败的账户
-    message += "\n🔴 以下账户登录失败，请检查：\n"
+    # 以统计的形式显示失败账户
+    message += "\n🔴 登录失败账户统计：\n"
     for service, results in login_results.items():
         if results['fail']:
-            message += f"📦 *{service}* 登录失败账户:\n"
-            message += f"  ❌ {', '.join(results['fail'])}\n"
+            message += f"📦 *{service}* 登录失败账户数: {len(results['fail'])} 个，分别是: {', '.join(results['fail'])}\n"
 
     await send_telegram_message(message)
     print(f'所有账号登录完成！')
