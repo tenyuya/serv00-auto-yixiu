@@ -123,22 +123,8 @@ async def main():
         delay = random.randint(1000, 8000)
         await delay_time(delay)
 
-    # 生成每个服务的详细报告
-    message += "\n🔚脚本结束，具体情况如下：\n\n"
-    for service, results in login_results.items():
-        message += f"📦 *{service}*:\n"
-        if results['success']:
-            message += f"  ✅ 登录成功: {', '.join(results['success'])}\n"
-        else:
-            message += "  ✅ 登录成功: 无\n"
-
-        if results['fail']:
-            message += f"  ❌ 登录失败: {', '.join(results['fail'])}\n"
-        else:
-            message += "  ❌ 登录失败: 无\n"
-
-    # 以统计的形式显示失败账户
-    message += "\n🔴 登录失败账户统计：\n"
+    # 删除之前的登录成功和失败的详情，只保留失败账户统计
+    message += "\n🔚脚本结束，失败账户统计如下：\n"
     for service, results in login_results.items():
         if results['fail']:
             message += f"📦 *{service}* 登录失败账户数: {len(results['fail'])} 个，分别是: {', '.join(results['fail'])}\n"
