@@ -97,6 +97,10 @@ async def main():
         print(f'读取 accounts.json 文件时出错: {e}')
         return
 
+    # 统计账号和封禁信息
+    ct8_total = 0
+    ct8_fail_count = 0
+
     for account in accounts:
         username = account['username']
         password = account['password']
@@ -111,16 +115,37 @@ async def main():
         if service_name not in login_results:
             login_results[service_name] = {'success': [], 'fail': []}
 
+        if service_name == 'CT8':
+            ct8_total += 1  # 统计CT8账号数量
+
         if is_logged_in:
             login_results[service_name]['success'].append(username)
             print(f"{service_name}账号 {username} 于北京时间 {now_beijing} 登录面板成功！")
         else:
             login_results[service_name]['fail'].append(username)
+            if service_name == 'CT8':
+                ct8_fail_count += 1  # 统计CT8账号失败数量
             message += f"❌*{service_name}*账号 *{username}* 于北京时间 {now_beijing} 登录失败\n\n❗账号已被封禁！\n\n"
             print(f"{service_name}账号 {username} 登录失败，账号已被封禁。")
 
         delay = random.randint(1000, 8000)
         await delay_time(delay)
+
+    # 生成统计信息
+    message = f"""
+*🎯 serv00&ct8自动化保号脚本运行报告*
+
+🕰 *北京时间*: {format_to_iso(datetime.utcnow() + timedelta(hours=8))}
+
+⏰ *UTC时间*: {format_to_iso(datetime.utcnow())}
+
+📝 *任务报告*:
+
+📊 *统计信息*：
+- CT8 总账号数: {ct8_total} 个
+- 今日被封禁的账号数: {ct8_fail_count} 个
+
+"""
 
     # 删除之前的登录成功和失败的详情，只保留失败账户统计
     message += "\n🔚脚本结束，失败账户统计如下：\n"
@@ -142,14 +167,6 @@ async def main():
 
 async def send_telegram_message(message):
     formatted_message = f"""
-*🎯 serv00&ct8自动化保号脚本运行报告*
-
-🕰 *北京时间*: {format_to_iso(datetime.utcnow() + timedelta(hours=8))}
-
-⏰ *UTC时间*: {format_to_iso(datetime.utcnow())}
-
-📝 *任务报告*:
-
 {message}
 """
 
