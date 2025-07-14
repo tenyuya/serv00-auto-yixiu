@@ -97,6 +97,7 @@ async def main():
         print(f'读取 accounts.json 文件时出错: {e}')
         return
 
+    total_accounts = len(accounts)
     for account in accounts:
         username = account['username']
         password = account['password']
@@ -113,28 +114,21 @@ async def main():
 
         if is_logged_in:
             login_results[service_name]['success'].append(username)
-            message += f"✅*{service_name}*账号 *{username}* 于北京时间 {now_beijing} 登录面板成功！\n\n"
             print(f"{service_name}账号 {username} 于北京时间 {now_beijing} 登录面板成功！")
         else:
             login_results[service_name]['fail'].append(username)
-            message += f"❌*{service_name}*账号 *{username}* 于北京时间 {now_beijing} 登录失败\n\n❗请检查 *{username}* 账号和密码是否正确。\n\n"
+            message += f"❌*{service_name}*账号 *{username}* 于北京时间 {now_beijing} 登录失败\n❗请检查 *{username}* 账号和密码是否正确。\n\n"
             print(f"{service_name}账号 {username} 登录失败，请检查 {service_name} 账号和密码是否正确。")
 
         delay = random.randint(1000, 8000)
         await delay_time(delay)
 
-    # 删除之前的登录成功和失败的详情，只保留失败账户统计
-    message += "\n🔚脚本结束，失败账户统计如下：\n"
-    for service, results in login_results.items():
-        if results['fail']:
-            message += f"📦 *{service}* 登录失败账户数: {len(results['fail'])} 个，分别是: {', '.join(results['fail'])}\n"
+    # 统计总失败账号数
+    total_failed = sum(len(results['fail']) for results in login_results.values())
 
-    await send_telegram_message(message)
-    print(f'所有账号登录完成！')
-    await shutdown_browser()
-
-async def send_telegram_message(message):
-    formatted_message = f"""
+    # 构建 Telegram 消息，仅包含失败账号信息
+    if total_failed > 0:
+        message = f"""
 *🎯 serv00&ct8自动化保号脚本运行报告*
 
 🕰 *北京时间*: {format_to_iso(datetime.utcnow() + timedelta(hours=8))}
@@ -143,13 +137,37 @@ async def send_telegram_message(message):
 
 📝 *任务报告*:
 
+🔍 总账号数: {total_accounts} 个
+❌ 登录失败账号数: {total_failed} 个
+
+📦 *失败账号详情*:
 {message}
+🔚 脚本执行完成
+"""
+    else:
+        message = f"""
+*🎯 serv00&ct8自动化保号脚本运行报告*
+
+🕰 *北京时间*: {format_to_iso(datetime.utcnow() + timedelta(hours=8))}
+
+⏰ *UTC时间*: {format_to_iso(datetime.utcnow())}
+
+📝 *任务报告*:
+
+🔍 总账号数: {total_accounts} 个
+✅ 所有账号均登录成功，无失败账号
+🔚 脚本执行完成
 """
 
+    await send_telegram_message(message)
+    print(f'所有账号登录完成！')
+    await shutdown_browser()
+
+async def send_telegram_message(message):
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
     payload = {
         'chat_id': TELEGRAM_CHAT_ID,
-        'text': formatted_message,
+        'text': message,
         'parse_mode': 'Markdown'
     }
     headers = {'Content-Type': 'application/json'}
