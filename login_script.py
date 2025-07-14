@@ -125,7 +125,8 @@ async def main():
             login_results[service_name]['fail'].append(username)
             if service_name == 'CT8':
                 ct8_fail_count += 1  # 统计CT8账号失败数量
-            message += f"❌*{service_name}*账号 *{username}* 于北京时间 {now_beijing} 登录失败\n\n❗账号已被封禁！\n\n"
+            # 记录失败账号并展示
+            message += f"❌*{service_name}*账号 *{username}* 于北京时间 {now_beijing} 登录失败\n\n❗️您的账号已被封禁！\n\n"
             print(f"{service_name}账号 {username} 登录失败，账号已被封禁。")
 
         delay = random.randint(1000, 8000)
@@ -154,12 +155,15 @@ async def main():
     if 'CT8' in login_results:
         ct8_fail_accounts = login_results['CT8']['fail']
         if ct8_fail_accounts:
-            message += f"📦 *CT8* 登录失败账户数: {len(ct8_fail_accounts)} 个，分别是: {', '.join(ct8_fail_accounts)}\n"
-
+            # 如果有失败的CT8账号，列出详细的失败账号
+            for fail_account in ct8_fail_accounts:
+                message += f"❌*CT8*账号 *{fail_account}* 于北京时间 {now_beijing} 登录失败\n\n❗️您的账号已被封禁！\n\n"
+    
     # 其他服务的失败账号
     for service, results in login_results.items():
         if service != 'CT8' and results['fail']:
-            message += f"📦 *{service}* 登录失败账户数: {len(results['fail'])} 个，分别是: {', '.join(results['fail'])}\n"
+            for fail_account in results['fail']:
+                message += f"❌*{service}*账号 *{fail_account}* 于北京时间 {now_beijing} 登录失败\n\n❗️您的账号已被封禁！\n\n"
 
     await send_telegram_message(message)
     print(f'所有账号登录完成！')
