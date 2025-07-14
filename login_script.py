@@ -112,28 +112,22 @@ async def main():
             login_results[service_name] = {'success': [], 'fail': []}
 
         if is_logged_in:
-            login_results[service_name]['success'].append({'username': username, 'password': password})
-            message += f"✅*{service_name}*账号 *{username}* (密码: *{password}*) 于北京时间 {now_beijing} 登录面板成功！\n\n"
+            login_results[service_name]['success'].append(username)
+            message += f"✅*{service_name}*账号 *{username}* 于北京时间 {now_beijing} 登录面板成功！\n\n"
             print(f"{service_name}账号 {username} 于北京时间 {now_beijing} 登录面板成功！")
         else:
-            login_results[service_name]['fail'].append({'username': username, 'password': password})
-            message += f"❌*{service_name}*账号 *{username}* (密码: *{password}*) 于北京时间 {now_beijing} 登录失败\n\n❗请检查 *{username}* 账号和密码是否正确。\n\n"
+            login_results[service_name]['fail'].append(username)
+            message += f"❌*{service_name}*账号 *{username}* 于北京时间 {now_beijing} 登录失败\n\n❗请检查 *{username}* 账号和密码是否正确。\n\n"
             print(f"{service_name}账号 {username} 登录失败，请检查 {service_name} 账号和密码是否正确。")
 
         delay = random.randint(1000, 8000)
         await delay_time(delay)
 
-    # 添加成功和失败账户统计
-    message += "\n🔚脚本结束，登录结果统计如下：\n"
+    # 删除之前的登录成功和失败的详情，只保留失败账户统计
+    message += "\n🔚脚本结束，失败账户统计如下：\n"
     for service, results in login_results.items():
-        if results['success']:
-            message += f"✅ *{service}* 登录成功账户数: {len(results['success'])} 个，分别是:\n"
-            for account in results['success']:
-                message += f"- 账号: {account['username']}, 密码: {account['password']}\n"
         if results['fail']:
-            message += f"❌ *{service}* 登录失败账户数: {len(results['fail'])} 个，分别是:\n"
-            for account in results['fail']:
-                message += f"- 账号: {account['username']}, 密码: {account['password']}\n"
+            message += f"📦 *{service}* 登录失败账户数: {len(results['fail'])} 个，分别是: {', '.join(results['fail'])}\n"
 
     await send_telegram_message(message)
     print(f'所有账号登录完成！')
