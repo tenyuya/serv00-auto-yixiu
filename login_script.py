@@ -97,6 +97,17 @@ async def main():
         print(f'读取 accounts.json 文件时出错: {e}')
         return
 
+    # 统计 CT8 和 serv00 的总账号数
+    ct8_accounts = 0
+    serv00_accounts = 0
+    for account in accounts:
+        panel = account['panel']
+        service_name = get_service_name(panel)
+        if service_name == 'CT8':
+            ct8_accounts += 1
+        elif service_name.startswith('S'):
+            serv00_accounts += 1
+
     total_accounts = len(accounts)
     for account in accounts:
         username = account['username']
@@ -138,6 +149,8 @@ async def main():
 📝 *任务报告*:
 
 🔍 总账号数: {total_accounts} 个
+📌 CT8 账号数: {ct8_accounts} 个
+📌 Serv00 账号数: {serv00_accounts} 个
 ❌ 登录失败账号数: {total_failed} 个
 
 📦 *失败账号详情*:
@@ -155,6 +168,8 @@ async def main():
 📝 *任务报告*:
 
 🔍 总账号数: {total_accounts} 个
+📌 CT8 账号数: {ct8_accounts} 个
+📌 Serv00 账号数: {serv00_accounts} 个
 ✅ 所有账号均登录成功，无失败账号
 🔚 脚本执行完成
 """
