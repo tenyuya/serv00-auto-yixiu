@@ -41,7 +41,8 @@ async def login(username, password, panel):
     global browser
     page = None
     service_name = get_service_name(panel)
-    screenshot_path = f"error_{service_name}_{username}.png"  # 错误截图路径
+    screenshot_path_before = f"before_{service_name}_{username}.png"
+    screenshot_path_after = f"after_{service_name}_{username}.png"
 
     try:
         if not browser:
@@ -51,89 +52,141 @@ async def login(username, password, panel):
                     '--no-sandbox',
                     '--disable-setuid-sandbox',
                     '--disable-blink-features=AutomationControlled',
+                    '--disable-web-security',  # 额外：绕过一些 JS 安全
                     '--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-                ]
+                ],
+                defaultViewport=None  # 全屏视口，避免裁剪
             )
 
         page = await browser.newPage()
-        # 隐藏 webdriver 属性
+        # 隐藏 webdriver
         await page.evaluateOnNewDocument('''() => {
             Object.defineProperty(navigator, "webdriver", { get: () => undefined });
         }''')
 
         url = f'https://{panel}/login/?next=/'
-        await page.goto(url, {'waitUntil': 'networkidle2', 'timeout': 30000})
+        await page.goto(url, {'waitUntil': 'networkidle2', 'timeout': 45000})  # 延长至45s
 
-        # 用户名（基于你的 HTML）
+        # 截图前状态
+        await page.screenshot({'path': screenshot_path_before, 'fullPage': True})
+        print(f"前状态截图: {screenshot_path_before}")
+
+        # 用户名：等待可见 + 滚动 + JS 设置
         username_selectors = ['#id_username', 'input[name="username"]']
+        username_selector = None
         username_input = None
-        for selector in username_selectors:
-            username_input = await page.querySelector(selector)
-            if username_input:
-                break
+        for sel in username_selectors:
+            try:
+                await page.waitForSelector(sel, {'visible': True, 'timeout': 5000})
+                username_input = await page.querySelector(sel)
+                if username_input:
+                    username_selector = sel
+                    break
+            except:
+                continue
         if not username_input:
             raise Exception('无法找到用户名输入框')
 
-        await page.evaluate('input => input.value = ""', username_input)
-        await page.type(selector, username, {'delay': random.randint(50, 150)})
+        # 滚动到视图
+        await page.evaluate('el => el.scrollIntoView({behavior: "smooth", block: "center"})', username_input)
+        await delay_time(500)
 
-        # 密码（基于你的 HTML）
+        # JS 清空并设置值（绕过 type 可见性）
+        await page.evaluate('''(el, val) => {
+            el.value = "";
+            el.value = val;
+            el.dispatchEvent(new Event('input', { bubbles: true }));
+            el.dispatchEvent(new Event('change', { bubbles: true }));
+            console.log("用户名设置: " + val);
+        }''', username_input, username)
+
+        # 密码：类似处理
         password_selectors = ['#id_password', 'input[name="password"]', 'input[type="password"]']
+        password_selector = None
         password_input = None
-        for selector in password_selectors:
-            password_input = await page.querySelector(selector)
-            if password_input:
-                break
+        for sel in password_selectors:
+            try:
+                await page.waitForSelector(sel, {'visible': True, 'timeout': 5000})
+                password_input = await page.querySelector(sel)
+                if password_input:
+                    password_selector = sel
+                    break
+            except:
+                continue
         if not password_input:
             raise Exception('无法找到密码输入框')
 
-        await page.type(selector, password, {'delay': random.randint(50, 150)})
+        await page.evaluate('el => el.scrollIntoView({behavior: "smooth", block: "center"})', password_input)
+        await delay_time(500)
 
-        # 可选：点击密码切换按钮（模拟真实用户）
+        await page.evaluate('''(el, val) => {
+            el.value = val;
+            el.dispatchEvent(new Event('input', { bubbles: true }));
+            el.dispatchEvent(new Event('change', { bubbles: true }));
+            console.log("密码设置完成");
+        }''', password_input, password)
+
+        # 可选：点击密码切换按钮
         toggle_button = await page.querySelector('button[data-pass-toggle]')
         if toggle_button:
-            await toggle_button.click()
-            await delay_time(500)  # 短暂等待切换
+            await page.evaluate('el => el.click()', toggle_button)
+            await delay_time(500)
 
-        # 提交按钮（基于你的 HTML：type="submit" 或 class）
-        submit_selectors = ['button[type="submit"]', '.button--primary', 'button:has(span)']  # :has 是现代 CSS，支持 span 内文本
+        # 提交按钮：等待 + 滚动 + JS 点击
+        submit_selectors = ['button[type="submit"]', '.button--primary']
+        submit_selector = None
         submit_button = None
-        for selector in submit_selectors:
+        for sel in submit_selectors:
             try:
-                submit_button = await page.querySelector(selector)
+                await page.waitForSelector(sel, {'visible': True, 'timeout': 5000})
+                submit_button = await page.querySelector(sel)
                 if submit_button:
+                    submit_selector = sel
                     break
             except:
                 continue
         if not submit_button:
             raise Exception('无法找到登录按钮')
 
-        await page.waitFor(1000 + random.randint(0, 500))
-        await submit_button.click()
+        await page.evaluate('el => el.scrollIntoView({behavior: "smooth", block: "center"})', submit_button)
+        await delay_time(1000 + random.randint(0, 500))
 
+        # JS 点击 + 触发 submit 事件
+        await page.evaluate('''(el) => {
+            el.click();
+            el.dispatchEvent(new Event('click', { bubbles: true }));
+            console.log("按钮点击");
+        }''', submit_button)
+
+        # 等待导航
         try:
-            await page.waitForNavigation({'waitUntil': 'networkidle2', 'timeout': 10000})
-        except:
-            await asyncio.sleep(5)
+            await page.waitForNavigation({'waitUntil': 'networkidle2', 'timeout': 15000})
+        except Exception as nav_err:
+            print(f"导航等待警告 (可能正常): {nav_err}")
+            await delay_time(5000)
 
-        # 登录成功检查（通用）
+        # 截图后状态
+        await page.screenshot({'path': screenshot_path_after, 'fullPage': True})
+        print(f"后状态截图: {screenshot_path_after}")
+
+        # 登录成功检查
         is_logged_in = await page.evaluate('''() => {
             const logoutButton = document.querySelector('a[href="/logout/"], a[href*="logout"]');
-            const dashboard = document.querySelector('h1, .dashboard, [class*="welcome"], [class*="panel"]');
-            return logoutButton !== null || dashboard !== null;
+            const dashboard = document.querySelector('h1, .dashboard, [class*="welcome"], [class*="panel"], main');
+            const errorMsg = document.querySelector('.alert-danger, [class*="error"]');  // 检查错误提示
+            console.log("Logout: " + !!logoutButton, "Dashboard: " + !!dashboard, "Error: " + !!errorMsg);
+            return (logoutButton !== null || dashboard !== null) && errorMsg === null;
         }''')
 
         if not is_logged_in:
-            await page.screenshot({'path': screenshot_path, 'fullPage': True})
-            print(f"登录失败，截图保存至 {screenshot_path}")
+            print(f"登录检查失败 - 检查截图 {screenshot_path_after}")
 
         return is_logged_in
 
     except Exception as e:
         if page:
-            await page.screenshot({'path': screenshot_path, 'fullPage': True})
+            await page.screenshot({'path': screenshot_path_after if 'after' in locals() else screenshot_path_before, 'fullPage': True})
         print(f'{service_name}账号 {username} 登录时出现错误: {e}')
-        print(f"错误截图: {screenshot_path}")
         return False
 
     finally:
