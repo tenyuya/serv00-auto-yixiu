@@ -66,8 +66,8 @@ async def login(username, password, panel):
         url = f'https://{panel}/login/?next=/'
         await page.goto(url, {'waitUntil': 'networkidle2', 'timeout': 45000})
 
-        # 额外等待 JS/动态加载
-        await page.waitForTimeout(3000 + random.randint(0, 2000))
+        # 修复: 用 waitFor 替换 waitForTimeout (兼容旧版 Pyppeteer)
+        await page.waitFor(3000 + random.randint(0, 2000))
 
         await page.screenshot({'path': screenshot_path_before, 'fullPage': True})
         print(f"前状态截图: {screenshot_path_before}")
@@ -78,7 +78,7 @@ async def login(username, password, panel):
         username_input = None
         for sel in username_selectors:
             try:
-                await page.waitForSelector(sel, {'timeout': 10000})  # 移除 visible
+                await page.waitForSelector(sel, {'timeout': 10000})
                 username_input = await page.querySelector(sel)
                 if username_input:
                     username_selector = sel
@@ -125,18 +125,18 @@ async def login(username, password, panel):
             console.log("密码设置完成");
         }''', password_input, password)
 
-        # 提交按钮：基于你的确切 HTML，优先匹配
+        # 提交按钮：基于你的 HTML
         submit_selectors = [
-            'button[type="submit"]',  # 直接 type
-            '.button--primary',  # class
-            '.login-form__button button[type="submit"]',  # 容器内
-            'button:has(span)'  # 有 span (现代 CSS)
+            'button[type="submit"]',
+            '.button--primary',
+            '.login-form__button button[type="submit"]',
+            'button:has(span)'
         ]
         submit_selector = None
         submit_button = None
         for sel in submit_selectors:
             try:
-                await page.waitForSelector(sel, {'timeout': 10000})  # 无 visible，延长等待
+                await page.waitForSelector(sel, {'timeout': 15000})  # 延长到15s
                 submit_button = await page.querySelector(sel)
                 if submit_button:
                     submit_selector = sel
@@ -149,7 +149,7 @@ async def login(username, password, panel):
             # 调试：打印所有 button
             all_buttons = await page.evaluate('''() => {
                 return Array.from(document.querySelectorAll('button, input[type="submit"]')).map(b => ({
-                    outerHTML: b.outerHTML,
+                    outerHTML: b.outerHTML.substring(0, 200) + '...',  // 截断打印
                     selector: b.matches('button[type="submit"]') ? 'submit-match' : 'other'
                 }));
             }''')
@@ -160,31 +160,41 @@ async def login(username, password, panel):
             async with aiofiles.open(debug_html_path, 'w', encoding='utf-8') as f:
                 await f.write(html_content)
             print(f"按钮未找到，所有 buttons 已打印，HTML 保存至: {debug_html_path}")
-            raise Exception('无法找到登录按钮 - 检查 debug.html 和控制台')
 
-        # 滚动 + 延时
-        await page.evaluate('el => el.scrollIntoView({behavior: "smooth", block: "center"})', submit_button)
-        await delay_time(1500 + random.randint(0, 1000))
+            # 新: 备用直接提交表单（绕按钮，基于标准 form）
+            print("🔄 备用: 直接提交表单")
+            await page.evaluate('''() => {
+                const form = document.querySelector('form');
+                if (form) {
+                    form.submit();
+                    console.log("表单提交");
+                } else {
+                    console.log("无表单");
+                }
+            }''')
+        else:
+            # 滚动 + 点击
+            await page.evaluate('el => el.scrollIntoView({behavior: "smooth", block: "center"})', submit_button)
+            await page.waitFor(1500 + random.randint(0, 1000))  # 修复: waitFor
 
-        # 点击：优先 page.click (force)，fallback evaluate
-        try:
-            await page.click(submit_selector, {'force': True, 'delay': random.randint(100, 300)})
-            print("✅ 使用 page.click 提交")
-        except:
-            await page.evaluate('''(el) => {
-                el.click();
-                el.dispatchEvent(new Event('click', { bubbles: true }));
-                el.dispatchEvent(new Event('submit', { bubbles: true }));
-                console.log("备用 JS 点击按钮");
-            }''', submit_button)
-            print("✅ 使用 JS evaluate 点击")
+            try:
+                await page.click(submit_selector, {'force': True, 'delay': random.randint(100, 300)})
+                print("✅ 使用 page.click 提交")
+            except:
+                await page.evaluate('''(el) => {
+                    el.click();
+                    el.dispatchEvent(new Event('click', { bubbles: true }));
+                    el.dispatchEvent(new Event('submit', { bubbles: true }));
+                    console.log("备用 JS 点击按钮");
+                }''', submit_button)
+                print("✅ 使用 JS evaluate 点击")
 
         # 等待导航
         try:
             await page.waitForNavigation({'waitUntil': 'networkidle2', 'timeout': 15000})
         except Exception as nav_err:
             print(f"导航等待警告 (可能正常): {nav_err}")
-            await delay_time(5000)
+            await page.waitFor(5000)  # 修复: waitFor
 
         screenshot_path_after = f"after_{service_name}_{username}.png"
         await page.screenshot({'path': screenshot_path_after, 'fullPage': True})
