@@ -67,7 +67,6 @@ async def login(username, password, panel):
         url = f'https://{panel}/login/?next=/'
         await page.goto(url, {'waitUntil': 'networkidle2', 'timeout': 45000})
 
-        # 额外等待 JS 加载（用 delay_time）
         await delay_time(3000 + random.randint(0, 2000))
 
         await page.screenshot({'path': screenshot_path_before, 'fullPage': True})
@@ -76,11 +75,13 @@ async def login(username, password, panel):
         # 用户名
         username_selectors = ['#id_username', 'input[name="username"]']
         username_input = None
+        username_selector = None
         for sel in username_selectors:
             try:
                 await page.waitForSelector(sel, {'timeout': 10000})
                 username_input = await page.querySelector(sel)
                 if username_input:
+                    username_selector = sel
                     print(f"用户名输入框找到: {sel}")
                     break
             except:
@@ -102,11 +103,13 @@ async def login(username, password, panel):
         # 密码
         password_selectors = ['#id_password', 'input[name="password"]', 'input[type="password"]']
         password_input = None
+        password_selector = None
         for sel in password_selectors:
             try:
                 await page.waitForSelector(sel, {'timeout': 10000})
                 password_input = await page.querySelector(sel)
                 if password_input:
+                    password_selector = sel
                     print(f"密码输入框找到: {sel}")
                     break
             except:
@@ -132,18 +135,19 @@ async def login(username, password, panel):
             'button:has(span)'
         ]
         submit_button = None
+        submit_selector = None
         for sel in submit_selectors:
             try:
                 await page.waitForSelector(sel, {'timeout': 15000})
                 submit_button = await page.querySelector(sel)
                 if submit_button:
+                    submit_selector = sel
                     print(f"✅ 找到按钮 (选择器: {sel})")
                     break
             except Exception as sel_err:
                 print(f"选择器 {sel} 超时/失败: {sel_err}")
 
         if not submit_button:
-            # 调试 + 备用提交表单
             all_buttons = await page.evaluate('''() => {
                 return Array.from(document.querySelectorAll('button, input[type="submit"]')).map(b => b.outerHTML.substring(0, 200) + '...');
             }''')
@@ -161,10 +165,10 @@ async def login(username, password, panel):
             print("🔄 备用: 直接提交表单")
         else:
             await page.evaluate('el => el.scrollIntoView({behavior: "smooth", block: "center"})', submit_button)
-            await delay_time(1500 + random.randint(0, 1000))  # 用 delay_time
+            await delay_time(1500 + random.randint(0, 1000))
 
             try:
-                await page.click(sel, {'force': True, 'delay': random.randint(100, 300)})  # 用找到的 sel
+                await page.click(submit_selector, {'force': True, 'delay': random.randint(100, 300)})
                 print("✅ 使用 page.click 提交")
             except:
                 await page.evaluate('''(el) => {
@@ -175,40 +179,69 @@ async def login(username, password, panel):
                 }''', submit_button)
                 print("✅ 使用 JS evaluate 点击")
 
+        # 新: 等待 loader 隐藏（CT8 提交后显示/藏）
+        try:
+            await page.waitForSelector('span[data-form-loader][style*="display: none"]', {'timeout': 5000})
+            print("✅ Loader 完成")
+        except:
+            print("⚠️ Loader 等待超时（可能无 loader）")
+            await delay_time(2000)
+
         # 等待导航
         try:
             await page.waitForNavigation({'waitUntil': 'networkidle2', 'timeout': 15000})
             print("✅ 导航成功")
         except Exception as nav_err:
             print(f"导航等待警告 (可能正常): {nav_err}")
-            await delay_time(5000)  # 用 delay_time
+            await delay_time(5000)
 
         await page.screenshot({'path': screenshot_path_after, 'fullPage': True})
         print(f"后状态截图: {screenshot_path_after}")
 
-        # 修复: page.url 是属性（无 await/()）
+        # URL 检查
         current_url = page.url
         print(f"当前 URL: {current_url} (成功应非 /login/)")
 
-        # 登录成功检查：优先 URL 变化 + 无错误
-        is_logged_in = await page.evaluate('''() => {
+        # 强化错误检测
+        error_check = await page.evaluate('''() => {
+            const errorSelectors = '.alert-danger, .alert-error, [class*="alert"][class*="danger"], [class*="error"]';
+            const errorEl = document.querySelector(errorSelectors);
+            let errorText = '';
+            if (errorEl) {
+                errorText = errorEl.textContent.trim();
+                console.log("错误文本: " + errorText);
+            }
+            const hasErrorText = errorText.toLowerCase().includes('nieprawidłowe') || 
+                                 errorText.toLowerCase().includes('invalid') || 
+                                 errorText.toLowerCase().includes('błędne') || 
+                                 errorText.length > 0;
+            return {hasError: !!errorEl && hasErrorText, errorText: errorText};
+        }''')
+        print(f"错误检查: {error_check}")
+
+        # 最终判断：URL 变 OR (无错误 AND 有 dashboard)
+        has_redirect = '/login/' not in current_url.lower()
+        dom_success = await page.evaluate('''() => {
             const logoutButton = document.querySelector('a[href="/logout/"], a[href*="logout"]');
-            const dashboard = document.querySelector('h1, .dashboard, [class*="welcome"], [class*="panel"], main, body > div');
-            const errorMsg = document.querySelector('.alert-danger, [class*="error"], .alert-error, [class*="invalid"], [class*="wrong"]');
-            console.log("检查结果: Logout=" + !!logoutButton + ", Dashboard=" + !!dashboard + ", Error=" + !!errorMsg);
-            return (logoutButton !== null || dashboard !== null) && !errorMsg;
+            const dashboard = document.querySelector('h1, .dashboard, [class*="welcome"], [class*="panel"], main:not(.login)');
+            return logoutButton !== null || dashboard !== null;
         }''')
 
-        # 备用: 如果 URL 变了，就算成功（CT8 登录后重定向）
-        if '/login/' not in current_url.lower():
-            is_logged_in = True
+        is_logged_in = has_redirect or (dom_success and not error_check['hasError'])
+
+        if has_redirect:
             print("✅ URL 检查: 已登录（重定向成功）")
+        elif error_check['hasError']:
+            print(f"❌ 错误提示: {error_check['errorText']}（密码/账号问题）")
+            is_logged_in = False
+        elif current_url.lower().find('/login/') > -1:
+            print("❌ URL 检查: 仍登录页（无重定向，无错误？手动查密码）")
+            is_logged_in = False
         else:
-            print("❌ URL 检查: 仍登录页（密码错？）")
+            print("✅ DOM 检查: 登录成功")
 
         if not is_logged_in:
-            print(f"登录检查失败 - 查看 {screenshot_path_after} 和 URL")
-            # 保存 after HTML 调试
+            print(f"登录失败 - 查看 {screenshot_path_after} 和错误文本")
             html_content = await page.content()
             async with aiofiles.open(debug_html_path, 'w', encoding='utf-8') as f:
                 await f.write(html_content)
