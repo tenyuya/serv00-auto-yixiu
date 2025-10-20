@@ -51,7 +51,7 @@ async def login(username, password, panel):
                     '--no-sandbox',
                     '--disable-setuid-sandbox',
                     '--disable-blink-features=AutomationControlled',
-                    '--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'  # 伪装 Chrome
+                    '--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
                 ]
             )
 
@@ -62,10 +62,10 @@ async def login(username, password, panel):
         }''')
 
         url = f'https://{panel}/login/?next=/'
-        await page.goto(url, {'waitUntil': 'networkidle2', 'timeout': 30000})  # 等待网络空闲，超时 30s
+        await page.goto(url, {'waitUntil': 'networkidle2', 'timeout': 30000})
 
-        # 通用用户名选择器（支持 id 或 name）
-        username_selectors = ['#id_username', '#username', 'input[name="username"]', 'input[name="login"]']
+        # 用户名（基于你的 HTML）
+        username_selectors = ['#id_username', 'input[name="username"]']
         username_input = None
         for selector in username_selectors:
             username_input = await page.querySelector(selector)
@@ -74,12 +74,11 @@ async def login(username, password, panel):
         if not username_input:
             raise Exception('无法找到用户名输入框')
 
-        # 清空并输入用户名
         await page.evaluate('input => input.value = ""', username_input)
-        await page.type(selector, username, {'delay': random.randint(50, 150)})  # 模拟打字延时
+        await page.type(selector, username, {'delay': random.randint(50, 150)})
 
-        # 通用密码选择器
-        password_selectors = ['#id_password', '#password', 'input[name="password"]', 'input[type="password"]']
+        # 密码（基于你的 HTML）
+        password_selectors = ['#id_password', 'input[name="password"]', 'input[type="password"]']
         password_input = None
         for selector in password_selectors:
             password_input = await page.querySelector(selector)
@@ -90,8 +89,14 @@ async def login(username, password, panel):
 
         await page.type(selector, password, {'delay': random.randint(50, 150)})
 
-        # 通用提交按钮选择器
-        submit_selectors = ['#submit', 'button[type="submit"]', 'input[type="submit"]', '.btn-login', 'button:contains("Log in")']
+        # 可选：点击密码切换按钮（模拟真实用户）
+        toggle_button = await page.querySelector('button[data-pass-toggle]')
+        if toggle_button:
+            await toggle_button.click()
+            await delay_time(500)  # 短暂等待切换
+
+        # 提交按钮（基于你的 HTML：type="submit" 或 class）
+        submit_selectors = ['button[type="submit"]', '.button--primary', 'button:has(span)']  # :has 是现代 CSS，支持 span 内文本
         submit_button = None
         for selector in submit_selectors:
             try:
@@ -103,34 +108,28 @@ async def login(username, password, panel):
         if not submit_button:
             raise Exception('无法找到登录按钮')
 
-        # 点击前等待
         await page.waitFor(1000 + random.randint(0, 500))
-
         await submit_button.click()
 
-        # 改进导航等待：等待 URL 变化或特定元素
         try:
             await page.waitForNavigation({'waitUntil': 'networkidle2', 'timeout': 10000})
         except:
-            # 如果无导航，等待 5s
             await asyncio.sleep(5)
 
-        # 改进登录成功检查：多条件（logout 链接或 dashboard 元素）
+        # 登录成功检查（通用）
         is_logged_in = await page.evaluate('''() => {
             const logoutButton = document.querySelector('a[href="/logout/"], a[href*="logout"]');
-            const dashboard = document.querySelector('h1, .dashboard, [class*="welcome"]');  // 常见 dashboard 标志
+            const dashboard = document.querySelector('h1, .dashboard, [class*="welcome"], [class*="panel"]');
             return logoutButton !== null || dashboard !== null;
         }''')
 
         if not is_logged_in:
-            # 保存截图调试
             await page.screenshot({'path': screenshot_path, 'fullPage': True})
             print(f"登录失败，截图保存至 {screenshot_path}")
 
         return is_logged_in
 
     except Exception as e:
-        # 错误时也截图
         if page:
             await page.screenshot({'path': screenshot_path, 'fullPage': True})
         print(f'{service_name}账号 {username} 登录时出现错误: {e}')
@@ -180,10 +179,9 @@ async def main():
             message += f"❌*{service_name}*账号 *{username}* 于北京时间 {now_beijing} 登录失败\n\n❗请检查 *{username}* 账号和密码是否正确。\n\n"
             print(f"{service_name}账号 {username} 登录失败，请检查 {service_name} 账号和密码是否正确。")
 
-        delay = random.randint(3000, 10000)  # 延时稍长，避免频繁请求被限
+        delay = random.randint(3000, 10000)
         await delay_time(delay)
 
-    # 报告优化：添加成功统计
     message += "\n🔚脚本结束，登录统计如下：\n"
     total_success = sum(len(r['success']) for r in login_results.values())
     total_fail = sum(len(r['fail']) for r in login_results.values())
