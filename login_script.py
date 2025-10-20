@@ -93,10 +93,12 @@ async def login(username, password, panel):
         await delay_time(500)
 
         await page.evaluate('''(el, val) => {
+            el.focus();
             el.value = "";
             el.value = val;
             el.dispatchEvent(new Event('input', { bubbles: true }));
             el.dispatchEvent(new Event('change', { bubbles: true }));
+            el.blur();  // 新: 触发 blur 验证
             console.log("用户名设置: " + val);
         }''', username_input, username)
 
@@ -121,9 +123,11 @@ async def login(username, password, panel):
         await delay_time(500)
 
         await page.evaluate('''(el, val) => {
+            el.focus();
             el.value = val;
             el.dispatchEvent(new Event('input', { bubbles: true }));
             el.dispatchEvent(new Event('change', { bubbles: true }));
+            el.blur();  // 新: 触发 blur
             console.log("密码设置完成");
         }''', password_input, password)
 
@@ -172,6 +176,7 @@ async def login(username, password, panel):
                 print("✅ 使用 page.click 提交")
             except:
                 await page.evaluate('''(el) => {
+                    el.focus();
                     el.click();
                     el.dispatchEvent(new Event('click', { bubbles: true }));
                     el.dispatchEvent(new Event('submit', { bubbles: true }));
@@ -179,69 +184,59 @@ async def login(username, password, panel):
                 }''', submit_button)
                 print("✅ 使用 JS evaluate 点击")
 
-        # 新: 等待 loader 隐藏（CT8 提交后显示/藏）
-        try:
-            await page.waitForSelector('span[data-form-loader][style*="display: none"]', {'timeout': 5000})
-            print("✅ Loader 完成")
-        except:
-            print("⚠️ Loader 等待超时（可能无 loader）")
-            await delay_time(2000)
-
-        # 等待导航
-        try:
-            await page.waitForNavigation({'waitUntil': 'networkidle2', 'timeout': 15000})
-            print("✅ 导航成功")
-        except Exception as nav_err:
-            print(f"导航等待警告 (可能正常): {nav_err}")
-            await delay_time(5000)
+        # 新: AJAX 等待（无 navigation， 等动态更新 10s）
+        await delay_time(10000)  # 延长等错误/成功加载
+        print("⏳ AJAX 等待完成，检查状态")
 
         await page.screenshot({'path': screenshot_path_after, 'fullPage': True})
         print(f"后状态截图: {screenshot_path_after}")
 
-        # URL 检查
+        # URL 检查（AJAX 可能不变）
         current_url = page.url
-        print(f"当前 URL: {current_url} (成功应非 /login/)")
+        print(f"当前 URL: {current_url} (AJAX 可能不变)")
 
-        # 强化错误检测
+        # 强化错误检测（更多匹配）
         error_check = await page.evaluate('''() => {
-            const errorSelectors = '.alert-danger, .alert-error, [class*="alert"][class*="danger"], [class*="error"]';
+            const errorSelectors = '.alert-danger, .alert-error, .alert, [class*="alert"][class*="danger"], [class*="error"], [class*="invalid"], [class*="wrong"], div[style*="color: red"]';
             const errorEl = document.querySelector(errorSelectors);
             let errorText = '';
             if (errorEl) {
-                errorText = errorEl.textContent.trim();
-                console.log("错误文本: " + errorText);
+                errorText = errorEl.textContent.trim() || errorEl.innerText.trim();
             }
+            // 文本匹配
             const hasErrorText = errorText.toLowerCase().includes('nieprawidłowe') || 
-                                 errorText.toLowerCase().includes('invalid') || 
-                                 errorText.toLowerCase().includes('błędne') || 
-                                 errorText.length > 0;
+                                 errorText.toLowerCase().includes('błędne') ||
+                                 errorText.toLowerCase().includes('invalid') ||
+                                 errorText.toLowerCase().includes('wrong') ||
+                                 errorText.toLowerCase().includes('error') ||
+                                 errorText.length > 10;  // 任意长文本
             return {hasError: !!errorEl && hasErrorText, errorText: errorText};
         }''')
         print(f"错误检查: {error_check}")
 
-        # 最终判断：URL 变 OR (无错误 AND 有 dashboard)
-        has_redirect = '/login/' not in current_url.lower()
-        dom_success = await page.evaluate('''() => {
-            const logoutButton = document.querySelector('a[href="/logout/"], a[href*="logout"]');
-            const dashboard = document.querySelector('h1, .dashboard, [class*="welcome"], [class*="panel"], main:not(.login)');
-            return logoutButton !== null || dashboard !== null;
+        # 成功 DOM 检查
+        success_check = await page.evaluate('''() => {
+            const logoutButton = document.querySelector('a[href="/logout/"], a[href*="logout"], [class*="logout"]');
+            const dashboard = document.querySelector('.dashboard, [class*="user-panel"], [class*="welcome-user"], h1:not(.login-title), main:not(.login-main)');
+            const successMsg = document.querySelector('[class*="success"], .alert-success');
+            return {hasLogout: !!logoutButton, hasDashboard: !!dashboard, hasSuccess: !!successMsg};
         }''')
+        print(f"成功检查: {success_check}")
 
-        is_logged_in = has_redirect or (dom_success and not error_check['hasError'])
+        # 最终判断
+        has_error = error_check['hasError']
+        has_success = success_check['hasLogout'] or success_check['hasDashboard'] or success_check['hasSuccess']
+        is_logged_in = has_success and not has_error
 
-        if has_redirect:
-            print("✅ URL 检查: 已登录（重定向成功）")
-        elif error_check['hasError']:
+        if has_error:
             print(f"❌ 错误提示: {error_check['errorText']}（密码/账号问题）")
-            is_logged_in = False
-        elif current_url.lower().find('/login/') > -1:
-            print("❌ URL 检查: 仍登录页（无重定向，无错误？手动查密码）")
-            is_logged_in = False
+        elif has_success:
+            print("✅ DOM 检查: 登录成功（AJAX 更新）")
         else:
-            print("✅ DOM 检查: 登录成功")
+            print("❌ 无重定向/成功元素/错误 - 手动查密码/IP")
 
         if not is_logged_in:
-            print(f"登录失败 - 查看 {screenshot_path_after} 和错误文本")
+            print(f"登录失败 - 查看 {screenshot_path_after}")
             html_content = await page.content()
             async with aiofiles.open(debug_html_path, 'w', encoding='utf-8') as f:
                 await f.write(html_content)
